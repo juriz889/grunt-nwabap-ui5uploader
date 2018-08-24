@@ -55,7 +55,7 @@ module.exports = function (grunt) {
             return;
         }
 
-        if (oOptions.ui5.package !== '$TMP' && !oOptions.ui5.transportno && oOptions.ui5.create_transport !== true) {
+        if (oOptions.ui5.package !== '$TMP' && !oOptions.ui5.transportno && oOptions.ui5.create_transport !== true && oOptions.ui5.transport_use_locked !== true) {
             grunt.fail.warn('For packages <> "$TMP" a transport number is necessary.');
             done();
             return;
@@ -124,9 +124,7 @@ module.exports = function (grunt) {
          */
         function syncFiles(oFileStoreOptions, oLogger, aFiles, oOptions) {
             var oFileStore = new FileStore(oFileStoreOptions, oLogger);
-
             oFileStore.syncFiles(aFiles, oOptions.resources.cwd, function (oError, aArtifactsSync) {
-
                 if (oError) {
                     grunt.fail.warn(oError);
                 }
@@ -160,26 +158,61 @@ module.exports = function (grunt) {
                 }
             });
         }
-
-        if (oOptions.ui5.package !== '$TMP' && oOptions.ui5.transportno === undefined) {
-            var oTransportManager = new Transports(oFileStoreOptions, oLogger);
-            if (oOptions.ui5.transport_use_user_match) {
-                uploadWithTransportUserMatch(oTransportManager);
-
-            } else if (oOptions.ui5.create_transport === true) {
+        /**
+         * @description Ends grunt task in case of an error
+         * @param {Object} oError - Error object
+         */
+        function _endGrundIfErrorIsBound(oError) {
+            if (oError) {
+                grunt.fail.fatal(oError);
+                done();
+            }
+        }
+        /**
+         * @description In case grunt option is set it will create a new transport and sync the files
+         * @param {Object} oTransportManager - Transport manager
+         */
+        function createNewTransportAndSyncIfAllowed(oTransportManager) {
+            if (oOptions.ui5.create_transport === true) {
                 oTransportManager.createTransport(oOptions.ui5.package, oOptions.ui5.transport_text, function (oError, sTransportNo) {
-                    if (oError) {
-                        grunt.fail.fatal(oError);
-                        return done();
-                    }
-
+                    _endGrundIfErrorIsBound(oError);
                     oFileStoreOptions.ui5.transportno = sTransportNo;
                     syncFiles(oFileStoreOptions, oLogger, aFiles, oOptions);
                 });
             } else {
                 var oError = new Error('No transport configured but create transport and user match was disabled!');
-                grunt.fail.fatal(oError);
-                return done();
+                _endGrundIfErrorIsBound(oError);
+            }
+        }
+        /**
+         * @description Will check if the application is already locked in a task. If this is the case the corresponting transport will be used.
+         * In case no lock was found this function will call the create new tranport and sync function
+         * @param {Object} oTransportManager - Transport manager
+         */
+        function checkExistingTranportAndSync(oTransportManager) {
+            oTransportManager.checkExistingTransport(oOptions.ui5.package, oOptions.ui5.bspcontainer, function (oError, oTransportCheck) {
+                _endGrundIfErrorIsBound(oError);
+                if (oTransportCheck.successful) {
+                    if (oTransportCheck.transportNo) {
+                        oFileStoreOptions.ui5.transportno = oTransportCheck.transportNo;
+                        syncFiles(oFileStoreOptions, oLogger, aFiles, oOptions);
+                    } else {
+                        createNewTransportAndSyncIfAllowed(oTransportManager);
+                    }
+                } else {
+                    grunt.fail.warn('Could not successfully check existing transport lock');
+                    done();
+                }
+            });
+        }
+        if (oOptions.ui5.package !== '$TMP' && oOptions.ui5.transportno === undefined) {
+            var oTransportManager = new Transports(oFileStoreOptions, oLogger);
+            if (oOptions.ui5.transport_use_locked) {
+                checkExistingTranportAndSync(oTransportManager);
+            } else if (oOptions.ui5.transport_use_user_match) {
+                uploadWithTransportUserMatch(oTransportManager);
+            } else {
+                createNewTransportAndSyncIfAllowed(oTransportManager);
             }
         } else {
             syncFiles(oFileStoreOptions, oLogger, aFiles, oOptions);

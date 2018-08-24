@@ -12,6 +12,7 @@ var util = require('util');
 var fsutil = require('./filestoreutil');
 var unirest = require('unirest');
 var CTS_BASE_URL = '/sap/bc/adt/cts/transports';
+var CTS_BASE_URL_CHECK = '/sap/bc/adt/cts/transportchecks';
 var AdtClient = require('./adt_client');
 var XMLDocument = require('xmldoc').XmlDocument;
 
@@ -29,6 +30,7 @@ var XMLDocument = require('xmldoc').XmlDocument;
  */
 function Transports(oOptions, oLogger) {
     this.client = new AdtClient(oOptions.conn, oOptions.auth, undefined, oLogger);
+    this.logger = oLogger;
 }
 
 Transports.prototype.createTransport = function (sPackageName, sRequestText, fnCallback) {
@@ -47,7 +49,40 @@ Transports.prototype.createTransport = function (sPackageName, sRequestText, fnC
         });
     }.bind(this));
 };
+Transports.prototype.checkExistingTransport = function (sPackageName, sApplicationName, fnCallback) {
+    var sPayload = this.getExistingTransportTemplate(sPackageName, sApplicationName);
+    var sUrl = this.client.buildUrl(CTS_BASE_URL_CHECK);
+    this.logger.logVerbose('URL for check tranport ' + sUrl);
+    this.logger.logVerbose('Use content to call check transport: ' + sPayload);
+    this.client._determineCSRFToken(function (x) {
+        var oRequest = unirest('POST', sUrl, {}, sPayload);
+        oRequest.header('Content-Type', 'application/xml');
+        this.logger.logVerbose('Request object for check transport ' + JSON.stringify(oRequest));
+        this.client.sendRequest(oRequest, function (oResponse) {
+            this.logger.logVerbose('Response check existing transport ' + JSON.stringify(oResponse));
+            if (oResponse.status === fsutil.HTTPSTAT.ok) {
+                var oParsed = new XMLDocument(oResponse.body);
+                var sResult = oParsed.valueWithPath('asx:values.DATA.RESULT');
+                var sTransportNo = oParsed.valueWithPath('asx:values.DATA.LOCKS.CTS_OBJECT_LOCK.LOCK_HOLDER.REQ_HEADER.TRKORR');
+                var bSuccessfull = true;
+                if (sResult !== 'S') {
+                    bSuccessfull = false;
+                }
+                if (bSuccessfull) {
+                    if (sTransportNo) {
+                        this.logger.logVerbose('Found objects are locked in transport ' + sTransportNo);
+                    } else {
+                        this.logger.logVerbose('Could not find transport where object is locked in');
+                    }
+                }
+                fnCallback(null, { transportNo: sTransportNo, successful: bSuccessfull });
+                return;
+            }
+            fnCallback(new Error(fsutil.createResponseError(oResponse)));
+        }.bind(this));
+    }.bind(this));
 
+};
 /**
  * Determines if a transport with the given texdt already exists. If true the callback returns the transport no
  * otherwise the cb returns null
@@ -85,5 +120,21 @@ Transports.prototype.getCreateTransportPayload = function (sPackageName, sReques
 
     return util.format(sTemplate, sPackageName, sRequestText);
 };
-
+Transports.prototype.getExistingTransportTemplate = function (sPackageName, sApplicationName) {
+    var sApplicationNameEncoded = encodeURIComponent(sApplicationName);
+    var sTemplate = '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">' +
+        '<asx:values>' +
+        '<DATA>' +
+        '<PGMID></PGMID>' +
+        '<OBJECT></OBJECT>' +
+        '<OBJECTNAME></OBJECTNAME>' +
+        '<DEVCLASS>%s</DEVCLASS>' +
+        '<OPERATION></OPERATION>' +
+        '<URI>/sap/bc/adt/filestore/ui5-bsp/objects/%s/$new</URI>' +
+        '</DATA>' +
+        '</asx:values>' +
+        '</asx:abap>';
+    return util.format(sTemplate, sPackageName, sApplicationNameEncoded);
+};
 module.exports = Transports;
