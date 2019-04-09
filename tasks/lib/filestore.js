@@ -697,12 +697,18 @@ FileStore.prototype.syncFile = function (sFile, sModif, sCwd, fnCallback) {
                 if (oResponse.body) {
                     var aMatched = oResponse.body.match(/.{3}K\d{6}/g);
                     if (aMatched && aMatched.length > 0) {
-                        me._oLogger.log('NW ABAP UI5 Uploader: Warning: the current BSP Application was already locked in ' + aMatched[0] + '. Now we are using transport ' + aMatched[0] + ' instead of ' + me._oOptions.ui5.transportno + '.');
-                        me._oOptions.ui5.transportno = aMatched[0];
-                        me.syncFile(sFile, sModif, sCwd, function (a, b) {
-                            fnCallback(a, b);
-                        });
-                        return;
+                        if(!me._oOptions.ui5.transportno}
+                            me._oLogger.log('NW ABAP UI5 Uploader: Warning: the current BSP Application was already locked in ' + aMatched[0] + '. Now we are using transport ' + aMatched[0] + ' instead of ' + me._oOptions.ui5.transportno + '.');
+                            me._oOptions.ui5.transportno = aMatched[0];
+                            me.syncFile(sFile, sModif, sCwd, function (a, b) {
+                                fnCallback(a, b);
+                            });
+                            return;
+                        else{
+                            me._oLogger.log('NW ABAP UI5 Uploader: Warning the current BSP application seems to be locked in several transports. Please merge them to avoid inconsistency");
+                            fnCallback('The current BSP application seems to be locked in several transports. Please merge them to avoid inconsistency', null);
+                            return;
+                        }
                     }
                 }
             }
