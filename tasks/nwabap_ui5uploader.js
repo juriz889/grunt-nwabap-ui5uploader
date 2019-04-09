@@ -14,7 +14,7 @@ var Logger = require('./lib/logger.js');
 
 module.exports = function (grunt) {
 
-    grunt.registerMultiTask('nwabap_ui5uploader', 'UI5 source upload to SAP NetWeaver ABAP', function () {
+    grunt.registerMultiTask('nwabap_ui5uploader_custom', 'UI5 source upload to SAP NetWeaver ABAP', function () {
 
         var done = this.async();
 
